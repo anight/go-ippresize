@@ -1,0 +1,10 @@
+prefix=/opt/intel/compilers_and_libraries_2018.5.274/linux/ipp
+exec_prefix=${prefix}
+libdir=${prefix}/lib/intel64_lin
+includedir=${prefix}/include
+
+Name: Intel Integrated Performance Primitives
+Description: Speed performance for imaging, vision, signal, security, and storage applications.
+Version: 2018.5.274
+Libs: -L${libdir} -lippi -lipps -lippcore
+Cflags: -I${includedir}
