@@ -8,6 +8,13 @@ import (
 	"testing"
 )
 
+func max(x, y int) int {
+	if x < y {
+		return y
+	}
+	return x
+}
+
 func TestSquareRGB(t *testing.T) {
 	reader, err := os.Open("./test.jpg")
 	if err != nil {
@@ -84,6 +91,9 @@ func TestRGB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("JpegToRGB() failed: %v", err)
 	}
+	if max(im_size.X, im_size.Y) != 224 {
+		t.Fatalf("Expected image 224 by 224 max, got %v", im_size)
+	}
 	if len(im_data) != im_size.X*im_size.Y*3 {
 		t.Fatalf("Expected image %d * %d * 3 = %v bytes, got %v bytes", im_size.X, im_size.Y, im_size.X*im_size.Y*3, len(im_data))
 	}
@@ -116,6 +126,9 @@ func TestGray(t *testing.T) {
 	im_data, im_size, err := JpegToGray(reader, image.Point{224, 224}, false, InterpolationLanczos)
 	if err != nil {
 		t.Fatalf("JpegToGray() failed: %v", err)
+	}
+	if max(im_size.X, im_size.Y) != 224 {
+		t.Fatalf("Expected image 224 by 224 max, got %v", im_size)
 	}
 	if len(im_data) != im_size.X*im_size.Y*1 {
 		t.Fatalf("Expected image %d * %d * 1 = %v bytes, got %v bytes", im_size.X, im_size.Y, im_size.X*im_size.Y*1, len(im_data))
