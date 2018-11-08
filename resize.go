@@ -1,7 +1,6 @@
 package ippresize
 
 /*
-#include <string.h>
 #include "image.h"
 #cgo pkg-config: ippi
 */
@@ -30,39 +29,25 @@ const (
 	InterpolationAntiliasingLanczos Interpolation = C.IMAGE_INTERPOLATION_ANTIALIASING_LANCZOS
 )
 
-func decode(reader io.Reader, colorspace jpeg.OutColorSpace, sqsize int) (image.Image, error) {
+func decode(reader io.Reader, colorspace jpeg.OutColorSpace, bbox image.Point) (image.Image, error) {
 	decoderOptions := jpeg.DecoderOptions{
 		OutColorSpace: colorspace,
-		ScaleTarget: image.Rectangle{
-			image.Point{0, 0},
-			image.Point{sqsize, sqsize},
-		},
+		ScaleTarget:   image.Rectangle{Max: bbox},
 	}
 	return jpeg.Decode(reader, &decoderOptions)
 }
 
-func Resize(in []uint8, in_stride int, in_w int, in_h int, sqsize int, channels int, interpolation Interpolation) []uint8 {
-
-	pixdata := make([]uint8, channels*sqsize*sqsize)
+func Resize(in []uint8, in_stride int, in_size image.Point, channels int, out_size image.Point, graypad bool, interpolation Interpolation) ([]uint8, image.Point) {
 
 	var img_in C.struct_image_s
-	var img_out C.struct_image_s
 
-	img_in.w = C.uint(in_w)
-	img_in.h = C.uint(in_h)
+	img_in.w = C.uint(in_size.X)
+	img_in.h = C.uint(in_size.Y)
 	img_in.channels = C.uint(channels)
 	img_in.rowstep = C.ulong(in_stride)
-
 	img_in_data := (*C.uchar)(unsafe.Pointer(&in[0]))
 
-	img_out.w = C.uint(sqsize)
-	img_out.h = C.uint(sqsize)
-	img_out.channels = img_in.channels
-	img_out.rowstep = C.ulong(img_out.w * img_out.channels)
-
-	img_out_data := (*C.uchar)(unsafe.Pointer(&pixdata[0]))
-
-	w, h := sqsize, sqsize
+	w, h := out_size.X, out_size.Y
 
 	if float64(w)/float64(img_in.w) < float64(h)/float64(img_in.h) {
 		h = int(math.Round(float64(img_in.h) * float64(w) / float64(img_in.w)))
@@ -76,9 +61,26 @@ func Resize(in []uint8, in_stride int, in_w int, in_h int, sqsize int, channels 
 		}
 	}
 
-	if w != sqsize || h != sqsize {
-		C.memset(unsafe.Pointer(img_out_data), 128, C.ulong(img_out.w*img_out.h*img_out.channels))
+	var img_out C.struct_image_s
+	var pixdata []uint8
+
+	if graypad {
+		img_out.w = C.uint(out_size.X)
+		img_out.h = C.uint(out_size.Y)
+		pixdata = make([]uint8, channels*out_size.X*out_size.Y)
+		if w != out_size.X || h != out_size.Y {
+			for i := range pixdata {
+				pixdata[i] = 128
+			}
+		}
+	} else {
+		img_out.w = C.uint(w)
+		img_out.h = C.uint(h)
+		pixdata = make([]uint8, channels*w*h)
 	}
+
+	img_out.channels = img_in.channels
+	img_out.rowstep = C.ulong(img_out.w * img_out.channels)
 
 	img_scaled := img_out
 
@@ -98,30 +100,56 @@ func Resize(in []uint8, in_stride int, in_w int, in_h int, sqsize int, channels 
 	runtime.KeepAlive(img_scaled)
 	runtime.KeepAlive(img_scaled_data)
 
-	return pixdata
+	return pixdata, image.Point{int(img_out.w), int(img_out.h)}
 }
 
-func JpegToSquareRGB(reader io.Reader, sqsize int, interpolation Interpolation) (pixdata []uint8, err error) {
+func JpegToRGB(reader io.Reader, bbox image.Point, graypad bool, interpolation Interpolation) (pixdata []uint8, size image.Point, err error) {
 	var im image.Image
-	im, err = decode(reader, jpeg.OutColorSpaceRGB, sqsize)
+	im, err = decode(reader, jpeg.OutColorSpaceRGB, bbox)
 	if err != nil {
 		return
 	}
 
 	im_rgb := im.(*rgb.Image)
-	pixdata = Resize(im_rgb.Pix, im_rgb.Stride, im_rgb.Bounds().Dx(), im_rgb.Bounds().Dy(), sqsize, 3, interpolation)
+	pixdata, size = Resize(im_rgb.Pix, im_rgb.Stride, im_rgb.Bounds().Max, 3, bbox, graypad, interpolation)
 	return
 }
 
-func JpegToSquareGray(reader io.Reader, sqsize int, interpolation Interpolation) (pixdata []uint8, err error) {
+func JpegToGray(reader io.Reader, bbox image.Point, graypad bool, interpolation Interpolation) (pixdata []uint8, size image.Point, err error) {
 	var im image.Image
-	im, err = decode(reader, jpeg.OutColorSpaceGray, sqsize)
+	im, err = decode(reader, jpeg.OutColorSpaceGray, bbox)
 	if err != nil {
 		return
 	}
 
 	im_gray := im.(*image.Gray)
-	pixdata = Resize(im_gray.Pix, im_gray.Stride, im_gray.Bounds().Dx(), im_gray.Bounds().Dy(), sqsize, 1, interpolation)
+	pixdata, size = Resize(im_gray.Pix, im_gray.Stride, im_gray.Bounds().Max, 1, bbox, graypad, interpolation)
+	return
+}
+
+func JpegToSquareRGB(reader io.Reader, sqsize int, interpolation Interpolation) (pixdata []uint8, err error) {
+	bbox := image.Point{sqsize, sqsize}
+	var im image.Image
+	im, err = decode(reader, jpeg.OutColorSpaceRGB, bbox)
+	if err != nil {
+		return
+	}
+
+	im_rgb := im.(*rgb.Image)
+	pixdata, _ = Resize(im_rgb.Pix, im_rgb.Stride, im_rgb.Bounds().Max, 3, bbox, true, interpolation)
+	return
+}
+
+func JpegToSquareGray(reader io.Reader, sqsize int, interpolation Interpolation) (pixdata []uint8, err error) {
+	bbox := image.Point{sqsize, sqsize}
+	var im image.Image
+	im, err = decode(reader, jpeg.OutColorSpaceGray, bbox)
+	if err != nil {
+		return
+	}
+
+	im_gray := im.(*image.Gray)
+	pixdata, _ = Resize(im_gray.Pix, im_gray.Stride, im_gray.Bounds().Max, 1, bbox, true, interpolation)
 	return
 }
 
