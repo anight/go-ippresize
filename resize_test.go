@@ -1,154 +1,88 @@
 package ippresize
 
 import (
+	"fmt"
 	"github.com/anight/go-libjpeg/rgb"
 	"image"
 	"image/png"
+	"io"
 	"os"
+	"reflect"
 	"testing"
 )
 
-func max(x, y int) int {
-	if x < y {
-		return y
-	}
-	return x
-}
-
-func TestSquareRGB(t *testing.T) {
-	reader, err := os.Open("./test.jpg")
-	if err != nil {
-		t.Errorf("os.Open() failed: %v", err)
-	}
-	defer reader.Close()
-	im_data, err := JpegToSquareRGB(reader, 224, InterpolationLanczos)
-	if err != nil {
-		t.Fatalf("JpegToSquareRGB() failed: %v", err)
-	}
-	if len(im_data) != 224*224*3 {
-		t.Fatalf("Expected image 224 * 224 * 3 = %v bytes, got %v bytes", 224*224*3, len(im_data))
-	}
-
-	im := rgb.Image{
-		Pix:    im_data,
-		Stride: 224 * 3,
-		Rect: image.Rectangle{
-			Max: image.Point{224, 224},
-		},
-	}
-
-	writer, err := os.Create("./test-square-rgb.png")
-	if err != nil {
-		t.Fatalf("os.Create() failed: %v", err)
-	}
-	defer writer.Close()
-
-	if err := png.Encode(writer, &im); err != nil {
-		t.Fatalf("png.Encode() failed: %v", err)
-	}
-}
-
-func TestSquareGray(t *testing.T) {
+func test_interpolation(t *testing.T, interpolation Interpolation, channels int, im_type reflect.Type, resize func(io.Reader, image.Point, bool, Interpolation) ([]uint8, image.Point, error)) {
 	reader, err := os.Open("./test.jpg")
 	if err != nil {
 		t.Fatalf("os.Open() failed: %v", err)
 	}
 	defer reader.Close()
-	im_data, err := JpegToSquareGray(reader, 224, InterpolationLanczos)
+	im_data, im_size, err := resize(reader, image.Point{224, 224}, false, interpolation)
 	if err != nil {
-		t.Fatalf("JpegToSquareGray() failed: %v", err)
+		t.Fatalf("%s() failed: %v", t.Name(), err)
 	}
-	if len(im_data) != 224*224*1 {
-		t.Fatalf("Expected image 224 * 224 * 1 = %v bytes, got %v bytes", 224*224*1, len(im_data))
-	}
-
-	im := image.Gray{
-		Pix:    im_data,
-		Stride: 224 * 1,
-		Rect: image.Rectangle{
-			Max: image.Point{224, 224},
-		},
+	if len(im_data) != im_size.X*im_size.Y*channels {
+		t.Fatalf("Expected image %d * %d * %d = %d bytes, got %d bytes", im_size.X, im_size.Y, channels, im_size.X*im_size.Y*channels, len(im_data))
 	}
 
-	writer, err := os.Create("./test-square-gray.png")
+	im := reflect.New(im_type)
+	im.Elem().FieldByName("Pix").Set(reflect.ValueOf(im_data))
+	im.Elem().FieldByName("Stride").SetInt(int64(im_size.X * channels))
+	im.Elem().FieldByName("Rect").FieldByName("Max").FieldByName("X").SetInt(int64(im_size.X))
+	im.Elem().FieldByName("Rect").FieldByName("Max").FieldByName("Y").SetInt(int64(im_size.Y))
+
+	writer, err := os.Create(fmt.Sprintf("./test-%v-%v.png", t.Name(), interpolation.Name()))
 	if err != nil {
 		t.Fatalf("os.Create() failed: %v", err)
 	}
 	defer writer.Close()
 
-	if err := png.Encode(writer, &im); err != nil {
+	if err := png.Encode(writer, im.Interface().(image.Image)); err != nil {
 		t.Fatalf("png.Encode() failed: %v", err)
 	}
+}
+
+func test(t *testing.T, channels int, im_type reflect.Type, resize func(io.Reader, image.Point, bool, Interpolation) ([]uint8, image.Point, error)) {
+	for _, interpolation := range []Interpolation{
+		InterpolationNearestNeighbour, InterpolationLinear, InterpolationCubic, InterpolationLanczos, InterpolationSuper,
+		InterpolationAntialiasingLinear, InterpolationAntialiasingCubic, InterpolationAntialiasingLanczos} {
+		test_interpolation(t, interpolaion, channels, im_type, resize)
+	}
+
+}
+
+func TestSquareRGBA(t *testing.T) {
+	test(t, 4, reflect.TypeOf(image.RGBA{}), func(reader io.Reader, size image.Point, graypad bool, interpolation Interpolation) ([]uint8, image.Point, error) {
+		im_data, err := JpegToSquareRGBA(reader, size.X, interpolation)
+		im_size := image.Point{size.X, size.X}
+		return im_data, im_size, err
+	})
+}
+
+func TestSquareRGB(t *testing.T) {
+	test(t, 3, reflect.TypeOf(rgb.Image{}), func(reader io.Reader, size image.Point, graypad bool, interpolation Interpolation) ([]uint8, image.Point, error) {
+		im_data, err := JpegToSquareRGB(reader, size.X, interpolation)
+		im_size := image.Point{size.X, size.X}
+		return im_data, im_size, err
+	})
+}
+
+func TestSquareGray(t *testing.T) {
+	test(t, 1, reflect.TypeOf(image.Gray{}), func(reader io.Reader, size image.Point, graypad bool, interpolation Interpolation) ([]uint8, image.Point, error) {
+		im_data, err := JpegToSquareGray(reader, size.X, interpolation)
+		im_size := image.Point{size.X, size.X}
+		return im_data, im_size, err
+	})
+}
+
+func TestRGBA(t *testing.T) {
+	test(t, 4, reflect.TypeOf(image.RGBA{}), JpegToRGBA)
 }
 
 func TestRGB(t *testing.T) {
-	reader, err := os.Open("./test.jpg")
-	if err != nil {
-		t.Errorf("os.Open() failed: %v", err)
-	}
-	defer reader.Close()
-	im_data, im_size, err := JpegToRGB(reader, image.Point{224, 224}, false, InterpolationLanczos)
-	if err != nil {
-		t.Fatalf("JpegToRGB() failed: %v", err)
-	}
-	if max(im_size.X, im_size.Y) != 224 {
-		t.Fatalf("Expected image 224 by 224 max, got %v", im_size)
-	}
-	if len(im_data) != im_size.X*im_size.Y*3 {
-		t.Fatalf("Expected image %d * %d * 3 = %v bytes, got %v bytes", im_size.X, im_size.Y, im_size.X*im_size.Y*3, len(im_data))
-	}
-
-	im := rgb.Image{
-		Pix:    im_data,
-		Stride: im_size.X * 3,
-		Rect: image.Rectangle{
-			Max: im_size,
-		},
-	}
-
-	writer, err := os.Create("./test-rgb.png")
-	if err != nil {
-		t.Fatalf("os.Create() failed: %v", err)
-	}
-	defer writer.Close()
-
-	if err := png.Encode(writer, &im); err != nil {
-		t.Fatalf("png.Encode() failed: %v", err)
-	}
+	test(t, 3, reflect.TypeOf(rgb.Image{}), JpegToRGB)
 }
 
 func TestGray(t *testing.T) {
-	reader, err := os.Open("./test.jpg")
-	if err != nil {
-		t.Errorf("os.Open() failed: %v", err)
-	}
-	defer reader.Close()
-	im_data, im_size, err := JpegToGray(reader, image.Point{224, 224}, false, InterpolationLanczos)
-	if err != nil {
-		t.Fatalf("JpegToGray() failed: %v", err)
-	}
-	if max(im_size.X, im_size.Y) != 224 {
-		t.Fatalf("Expected image 224 by 224 max, got %v", im_size)
-	}
-	if len(im_data) != im_size.X*im_size.Y*1 {
-		t.Fatalf("Expected image %d * %d * 1 = %v bytes, got %v bytes", im_size.X, im_size.Y, im_size.X*im_size.Y*1, len(im_data))
-	}
-
-	im := image.Gray{
-		Pix:    im_data,
-		Stride: im_size.X * 1,
-		Rect: image.Rectangle{
-			Max: im_size,
-		},
-	}
-
-	writer, err := os.Create("./test-gray.png")
-	if err != nil {
-		t.Fatalf("os.Create() failed: %v", err)
-	}
-	defer writer.Close()
-
-	if err := png.Encode(writer, &im); err != nil {
-		t.Fatalf("png.Encode() failed: %v", err)
-	}
+	test(t, 1, reflect.TypeOf(image.Gray{}), JpegToGray)
 }

@@ -19,15 +19,37 @@ import (
 type Interpolation C.image_interpolation_t
 
 const (
-	InterpolationNearestNeighbour   Interpolation = C.IMAGE_INTERPOLATION_NN
-	InterpolationLinear             Interpolation = C.IMAGE_INTERPOLATION_LINEAR
-	InterpolationCubic              Interpolation = C.IMAGE_INTERPOLATION_CUBIC
-	InterpolationLanczos            Interpolation = C.IMAGE_INTERPOLATION_LANCZOS
-	InterpolationSuper              Interpolation = C.IMAGE_INTERPOLATION_SUPER
-	InterpolationAntialiasingLinear Interpolation = C.IMAGE_INTERPOLATION_ANTIALIASING_LINEAR
-	InterpolationAntialiasingCubic  Interpolation = C.IMAGE_INTERPOLATION_ANTIALIASING_CUBIC
-	InterpolationAntiliasingLanczos Interpolation = C.IMAGE_INTERPOLATION_ANTIALIASING_LANCZOS
+	InterpolationNearestNeighbour    Interpolation = C.IMAGE_INTERPOLATION_NN
+	InterpolationLinear              Interpolation = C.IMAGE_INTERPOLATION_LINEAR
+	InterpolationCubic               Interpolation = C.IMAGE_INTERPOLATION_CUBIC
+	InterpolationLanczos             Interpolation = C.IMAGE_INTERPOLATION_LANCZOS
+	InterpolationSuper               Interpolation = C.IMAGE_INTERPOLATION_SUPER
+	InterpolationAntialiasingLinear  Interpolation = C.IMAGE_INTERPOLATION_ANTIALIASING_LINEAR
+	InterpolationAntialiasingCubic   Interpolation = C.IMAGE_INTERPOLATION_ANTIALIASING_CUBIC
+	InterpolationAntialiasingLanczos Interpolation = C.IMAGE_INTERPOLATION_ANTIALIASING_LANCZOS
 )
+
+func (i Interpolation) Name() string {
+	switch i {
+	case InterpolationNearestNeighbour:
+		return "NearestNeighbour"
+	case InterpolationLinear:
+		return "Linear"
+	case InterpolationCubic:
+		return "Cubic"
+	case InterpolationLanczos:
+		return "Lanczos"
+	case InterpolationSuper:
+		return "Super"
+	case InterpolationAntialiasingLinear:
+		return "AntialiasingLinear"
+	case InterpolationAntialiasingCubic:
+		return "AntialiasingCubic"
+	case InterpolationAntialiasingLanczos:
+		return "AntialiasingLanczos"
+	}
+	return ""
+}
 
 func decode(reader io.Reader, colorspace jpeg.OutColorSpace, bbox image.Point) (image.Image, error) {
 	decoderOptions := jpeg.DecoderOptions{
@@ -103,6 +125,18 @@ func Resize(in []uint8, in_stride int, in_size image.Point, channels int, out_si
 	return pixdata, image.Point{int(img_out.w), int(img_out.h)}
 }
 
+func JpegToRGBA(reader io.Reader, bbox image.Point, graypad bool, interpolation Interpolation) (pixdata []uint8, size image.Point, err error) {
+	var im image.Image
+	im, err = decode(reader, jpeg.OutColorSpaceRGBA, bbox)
+	if err != nil {
+		return
+	}
+
+	im_rgba := im.(*image.RGBA)
+	pixdata, size = Resize(im_rgba.Pix, im_rgba.Stride, im_rgba.Bounds().Max, 4, bbox, graypad, interpolation)
+	return
+}
+
 func JpegToRGB(reader io.Reader, bbox image.Point, graypad bool, interpolation Interpolation) (pixdata []uint8, size image.Point, err error) {
 	var im image.Image
 	im, err = decode(reader, jpeg.OutColorSpaceRGB, bbox)
@@ -124,6 +158,19 @@ func JpegToGray(reader io.Reader, bbox image.Point, graypad bool, interpolation 
 
 	im_gray := im.(*image.Gray)
 	pixdata, size = Resize(im_gray.Pix, im_gray.Stride, im_gray.Bounds().Max, 1, bbox, graypad, interpolation)
+	return
+}
+
+func JpegToSquareRGBA(reader io.Reader, sqsize int, interpolation Interpolation) (pixdata []uint8, err error) {
+	bbox := image.Point{sqsize, sqsize}
+	var im image.Image
+	im, err = decode(reader, jpeg.OutColorSpaceRGBA, bbox)
+	if err != nil {
+		return
+	}
+
+	im_rgba := im.(*image.RGBA)
+	pixdata, _ = Resize(im_rgba.Pix, im_rgba.Stride, im_rgba.Bounds().Max, 4, bbox, true, interpolation)
 	return
 }
 
