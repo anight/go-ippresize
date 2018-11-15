@@ -46,7 +46,7 @@ func test(t *testing.T, channels int, im_type reflect.Type, resize func(io.Reade
 	for _, interpolation := range []Interpolation{
 		InterpolationNearestNeighbour, InterpolationLinear, InterpolationCubic, InterpolationLanczos, InterpolationSuper,
 		InterpolationAntialiasingLinear, InterpolationAntialiasingCubic, InterpolationAntialiasingLanczos} {
-		test_interpolation(t, interpolaion, channels, im_type, resize)
+		test_interpolation(t, interpolation, channels, im_type, resize)
 	}
 
 }
