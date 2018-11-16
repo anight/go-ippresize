@@ -31,7 +31,7 @@ func test_interpolation(t *testing.T, interpolation Interpolation, channels int,
 	im.Elem().FieldByName("Rect").FieldByName("Max").FieldByName("X").SetInt(int64(im_size.X))
 	im.Elem().FieldByName("Rect").FieldByName("Max").FieldByName("Y").SetInt(int64(im_size.Y))
 
-	writer, err := os.Create(fmt.Sprintf("./test-%v-%v.png", t.Name(), interpolation.Name()))
+	writer, err := os.Create(fmt.Sprintf("./test-%v-%v.png", t.Name(), interpolation))
 	if err != nil {
 		t.Fatalf("os.Create() failed: %v", err)
 	}

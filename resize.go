@@ -29,7 +29,7 @@ const (
 	InterpolationAntialiasingLanczos Interpolation = C.IMAGE_INTERPOLATION_ANTIALIASING_LANCZOS
 )
 
-func (i Interpolation) Name() string {
+func (i Interpolation) String() string {
 	switch i {
 	case InterpolationNearestNeighbour:
 		return "NearestNeighbour"
