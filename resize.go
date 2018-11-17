@@ -125,7 +125,7 @@ func Resize(in []uint8, in_stride int, in_size image.Point, channels int, out_si
 	return pixdata, image.Point{int(img_out.w), int(img_out.h)}
 }
 
-func JpegToRGBA(reader io.Reader, bbox image.Point, graypad bool, interpolation Interpolation) (pixdata []uint8, size image.Point, err error) {
+func JpegToRGBA(reader io.Reader, bbox image.Point, interpolation Interpolation) (pixdata []uint8, size image.Point, err error) {
 	var im image.Image
 	im, err = decode(reader, jpeg.OutColorSpaceRGBA, bbox)
 	if err != nil {
@@ -133,11 +133,11 @@ func JpegToRGBA(reader io.Reader, bbox image.Point, graypad bool, interpolation 
 	}
 
 	im_rgba := im.(*image.RGBA)
-	pixdata, size = Resize(im_rgba.Pix, im_rgba.Stride, im_rgba.Bounds().Max, 4, bbox, graypad, interpolation)
+	pixdata, size = Resize(im_rgba.Pix, im_rgba.Stride, im_rgba.Bounds().Max, 4, bbox, false, interpolation)
 	return
 }
 
-func JpegToRGB(reader io.Reader, bbox image.Point, graypad bool, interpolation Interpolation) (pixdata []uint8, size image.Point, err error) {
+func JpegToRGB(reader io.Reader, bbox image.Point, interpolation Interpolation) (pixdata []uint8, size image.Point, err error) {
 	var im image.Image
 	im, err = decode(reader, jpeg.OutColorSpaceRGB, bbox)
 	if err != nil {
@@ -145,11 +145,11 @@ func JpegToRGB(reader io.Reader, bbox image.Point, graypad bool, interpolation I
 	}
 
 	im_rgb := im.(*rgb.Image)
-	pixdata, size = Resize(im_rgb.Pix, im_rgb.Stride, im_rgb.Bounds().Max, 3, bbox, graypad, interpolation)
+	pixdata, size = Resize(im_rgb.Pix, im_rgb.Stride, im_rgb.Bounds().Max, 3, bbox, false, interpolation)
 	return
 }
 
-func JpegToGray(reader io.Reader, bbox image.Point, graypad bool, interpolation Interpolation) (pixdata []uint8, size image.Point, err error) {
+func JpegToGray(reader io.Reader, bbox image.Point, interpolation Interpolation) (pixdata []uint8, size image.Point, err error) {
 	var im image.Image
 	im, err = decode(reader, jpeg.OutColorSpaceGray, bbox)
 	if err != nil {
@@ -157,7 +157,7 @@ func JpegToGray(reader io.Reader, bbox image.Point, graypad bool, interpolation 
 	}
 
 	im_gray := im.(*image.Gray)
-	pixdata, size = Resize(im_gray.Pix, im_gray.Stride, im_gray.Bounds().Max, 1, bbox, graypad, interpolation)
+	pixdata, size = Resize(im_gray.Pix, im_gray.Stride, im_gray.Bounds().Max, 1, bbox, false, interpolation)
 	return
 }
 

@@ -11,13 +11,13 @@ import (
 	"testing"
 )
 
-func test_interpolation(t *testing.T, interpolation Interpolation, channels int, im_type reflect.Type, resize func(io.Reader, image.Point, bool, Interpolation) ([]uint8, image.Point, error)) {
+func test_interpolation(t *testing.T, interpolation Interpolation, channels int, im_type reflect.Type, resize func(io.Reader, image.Point, Interpolation) ([]uint8, image.Point, error)) {
 	reader, err := os.Open("./test.jpg")
 	if err != nil {
 		t.Fatalf("os.Open() failed: %v", err)
 	}
 	defer reader.Close()
-	im_data, im_size, err := resize(reader, image.Point{224, 224}, false, interpolation)
+	im_data, im_size, err := resize(reader, image.Point{224, 224}, interpolation)
 	if err != nil {
 		t.Fatalf("%s() failed: %v", t.Name(), err)
 	}
@@ -42,7 +42,7 @@ func test_interpolation(t *testing.T, interpolation Interpolation, channels int,
 	}
 }
 
-func test(t *testing.T, channels int, im_type reflect.Type, resize func(io.Reader, image.Point, bool, Interpolation) ([]uint8, image.Point, error)) {
+func test(t *testing.T, channels int, im_type reflect.Type, resize func(io.Reader, image.Point, Interpolation) ([]uint8, image.Point, error)) {
 	for _, interpolation := range []Interpolation{
 		InterpolationNearestNeighbour, InterpolationLinear, InterpolationCubic, InterpolationLanczos, InterpolationSuper,
 		InterpolationAntialiasingLinear, InterpolationAntialiasingCubic, InterpolationAntialiasingLanczos} {
@@ -52,7 +52,7 @@ func test(t *testing.T, channels int, im_type reflect.Type, resize func(io.Reade
 }
 
 func TestSquareRGBA(t *testing.T) {
-	test(t, 4, reflect.TypeOf(image.RGBA{}), func(reader io.Reader, size image.Point, graypad bool, interpolation Interpolation) ([]uint8, image.Point, error) {
+	test(t, 4, reflect.TypeOf(image.RGBA{}), func(reader io.Reader, size image.Point, interpolation Interpolation) ([]uint8, image.Point, error) {
 		im_data, err := JpegToSquareRGBA(reader, size.X, interpolation)
 		im_size := image.Point{size.X, size.X}
 		return im_data, im_size, err
@@ -60,7 +60,7 @@ func TestSquareRGBA(t *testing.T) {
 }
 
 func TestSquareRGB(t *testing.T) {
-	test(t, 3, reflect.TypeOf(rgb.Image{}), func(reader io.Reader, size image.Point, graypad bool, interpolation Interpolation) ([]uint8, image.Point, error) {
+	test(t, 3, reflect.TypeOf(rgb.Image{}), func(reader io.Reader, size image.Point, interpolation Interpolation) ([]uint8, image.Point, error) {
 		im_data, err := JpegToSquareRGB(reader, size.X, interpolation)
 		im_size := image.Point{size.X, size.X}
 		return im_data, im_size, err
@@ -68,7 +68,7 @@ func TestSquareRGB(t *testing.T) {
 }
 
 func TestSquareGray(t *testing.T) {
-	test(t, 1, reflect.TypeOf(image.Gray{}), func(reader io.Reader, size image.Point, graypad bool, interpolation Interpolation) ([]uint8, image.Point, error) {
+	test(t, 1, reflect.TypeOf(image.Gray{}), func(reader io.Reader, size image.Point, interpolation Interpolation) ([]uint8, image.Point, error) {
 		im_data, err := JpegToSquareGray(reader, size.X, interpolation)
 		im_size := image.Point{size.X, size.X}
 		return im_data, im_size, err
