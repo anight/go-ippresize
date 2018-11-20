@@ -1,13 +1,21 @@
 #! /bin/bash
 
+# download l_ipp_2019.1.144.tgz from https://software.seek.intel.com/performance-libraries
+
+tar zxfv l_ipp_2019.1.144.tgz
+
+pushd l_ipp_2019.1.144/rpm
+
 sudo rpm --nodeps -Uvh \
-	intel-ipp-common-2018.4-274-2018.4-274.noarch.rpm \
-	intel-ipp-st-2018.4-274-2018.4-274.x86_64.rpm \
-	intel-ipp-st-devel-2018.4-274-2018.4-274.x86_64.rpm
+	intel-ipp-common-2019.1-144-2019.1-144.noarch.rpm \
+	intel-ipp-st-2019.1-144-2019.1-144.x86_64.rpm \
+	intel-ipp-st-devel-2019.1-144-2019.1-144.x86_64.rpm
 
-ipp_root="/opt/intel/compilers_and_libraries_2018.5.274/linux/ipp"
+popd
 
-sudo install -D -m 644 ippi.pc "${ipp_root}/lib/intel64_lin/pkgconfig/"
+ipp_root="/opt/intel/compilers_and_libraries_2019.1.144/linux/ipp"
+
+sudo install -D -m 644 ippi.pc "${ipp_root}/lib/intel64_lin/pkgconfig/ippi.pc"
 
 echo "${ipp_root}/lib/intel64_lin" | sudo tee /etc/ld.so.conf.d/ipp.conf
 
