@@ -5,6 +5,8 @@
 
 #include "image.h"
 
+#define channels_select_C134R(channels, name) (channels == 1 ? name##_C1R : (channels == 3 ? name##_C3R : name##_C4R))
+#define channels_select_C134IR(channels, name) (channels == 1 ? name##_C1IR : (channels == 3 ? name##_C3IR : name##_C4IR))
 
 static int image_ipp_inter(image_interpolation_t inter, IppiInterpolationType *interpolation, int *antialiasing)
 {
@@ -161,53 +163,29 @@ int image_ipp_resize(const struct image_s *in, const unsigned char *in_data, str
 	IppiPoint dstOffset = {0, 0};
 
 	if (antialiasing) {
-		if (in->channels == 4) {
-			ippSts = ippiResizeAntialiasing_8u_C4R(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, ippBorderRepl, 0, pSpec, pBuffer);
-		} else {
-			ippSts = (in->channels == 3 ? ippiResizeAntialiasing_8u_C3R : ippiResizeAntialiasing_8u_C1R)
-				(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, ippBorderRepl, 0, pSpec, pBuffer);
-		}
+		ippSts = channels_select_C134R(in->channels, ippiResizeAntialiasing_8u)
+			(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, ippBorderRepl, 0, pSpec, pBuffer);
 	} else {
 		switch (interpolation) {
 			case ippNearest:
-				if (in->channels == 4) {
-					ippSts = ippiResizeNearest_8u_C4R(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, pSpec, pBuffer);
-				} else {
-					ippSts = (in->channels == 3 ? ippiResizeNearest_8u_C3R : ippiResizeNearest_8u_C1R)
-						(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, pSpec, pBuffer);
-				}
+				ippSts = channels_select_C134R(in->channels, ippiResizeNearest_8u)
+					(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, pSpec, pBuffer);
 				break;
 			case ippLinear:
-				if (in->channels == 4) {
-					ippSts = ippiResizeLinear_8u_C4R(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, ippBorderRepl, 0, pSpec, pBuffer);
-				} else {
-					ippSts = (in->channels == 3 ? ippiResizeLinear_8u_C3R : ippiResizeLinear_8u_C1R)
-						(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, ippBorderRepl, 0, pSpec, pBuffer);
-				}
+				ippSts = channels_select_C134R(in->channels, ippiResizeLinear_8u)
+					(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, ippBorderRepl, 0, pSpec, pBuffer);
 				break;
 			case ippCubic:
-				if (in->channels == 4) {
-					ippSts = ippiResizeCubic_8u_C4R(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, ippBorderRepl, 0, pSpec, pBuffer);
-				} else {
-					ippSts = (in->channels == 3 ? ippiResizeCubic_8u_C3R : ippiResizeCubic_8u_C1R)
-						(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, ippBorderRepl, 0, pSpec, pBuffer);
-				}
+				ippSts = channels_select_C134R(in->channels, ippiResizeCubic_8u)
+					(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, ippBorderRepl, 0, pSpec, pBuffer);
 				break;
 			case ippLanczos:
-				if (in->channels == 4) {
-					ippSts = ippiResizeLanczos_8u_C4R(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, ippBorderRepl, 0, pSpec, pBuffer);
-				} else {
-					ippSts = (in->channels == 3 ? ippiResizeLanczos_8u_C3R : ippiResizeLanczos_8u_C1R)
-						(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, ippBorderRepl, 0, pSpec, pBuffer);
-				}
+				ippSts = channels_select_C134R(in->channels, ippiResizeLanczos_8u)
+					(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, ippBorderRepl, 0, pSpec, pBuffer);
 				break;
 			case ippSuper:
-				if (in->channels == 4) {
-					ippSts = ippiResizeSuper_8u_C4R(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, pSpec, pBuffer);
-				} else {
-					ippSts = (in->channels == 3 ? ippiResizeSuper_8u_C3R : ippiResizeSuper_8u_C1R)
-						(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, pSpec, pBuffer);
-				}
+				ippSts = channels_select_C134R(in->channels, ippiResizeSuper_8u)
+					(in_data, in->rowstep, out_data, out->rowstep, dstOffset, dstSize, pSpec, pBuffer);
 				break;
 			default:
 				return -1;
@@ -216,6 +194,28 @@ int image_ipp_resize(const struct image_s *in, const unsigned char *in_data, str
 
 	ippsFree(pSpec);
 	ippiFree(pBuffer);
+
+	if (ippSts != ippStsNoErr) {
+		return -1;
+	}
+
+	return 0;
+}
+
+int image_ipp_replicate_border_inplace(struct image_s *dst_im, unsigned char *dst_im_data, unsigned src_off_x, unsigned src_off_y, unsigned src_w, unsigned src_h)
+{
+	if (dst_im->channels != 1 && dst_im->channels != 3 && dst_im->channels != 4) {
+		return -1;
+	}
+
+	IppStatus ippSts;
+	unsigned char *start = dst_im_data + dst_im->channels * src_off_x + dst_im->rowstep * src_off_y;
+
+	IppiSize srcSize = { src_w, src_h };
+	IppiSize dstSize = { dst_im->w, dst_im->h };
+
+	ippSts = channels_select_C134IR(dst_im->channels, ippiCopyReplicateBorder_8u)
+		(start, dst_im->rowstep, srcSize, dstSize, src_off_y, src_off_x);
 
 	if (ippSts != ippStsNoErr) {
 		return -1;
