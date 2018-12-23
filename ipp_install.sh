@@ -15,7 +15,7 @@ popd
 
 ipp_root="/opt/intel/compilers_and_libraries_2019.1.144/linux/ipp"
 
-sudo install -D -m 644 ippi.pc "${ipp_root}/lib/intel64_lin/pkgconfig/ippi.pc"
+sudo install -D -m 644 libippi.pc "${ipp_root}/lib/intel64_lin/pkgconfig/libippi.pc"
 
 echo "${ipp_root}/lib/intel64_lin" | sudo tee /etc/ld.so.conf.d/ipp.conf
 

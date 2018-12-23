@@ -2,7 +2,7 @@ package ippresize
 
 /*
 #include "image.h"
-#cgo pkg-config: ippi
+#cgo pkg-config: libippi
 */
 import "C"
 
