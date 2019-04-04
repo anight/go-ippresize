@@ -2,7 +2,6 @@ package ippresize
 
 import (
 	"bytes"
-	"fmt"
 	"github.com/anight/go-libjpeg/rgb"
 	"image"
 	"image/png"
@@ -12,12 +11,24 @@ import (
 	"testing"
 )
 
+var allInterpolations = [...]Interpolation{
+	InterpolationNearestNeighbour,
+	InterpolationLinear,
+	InterpolationCubic,
+	InterpolationLanczos,
+	InterpolationSuper,
+	InterpolationAntialiasingLinear,
+	InterpolationAntialiasingCubic,
+	InterpolationAntialiasingLanczos,
+}
+
 func testResizeInterpolation(t *testing.T, interpolation Interpolation, channels int, im_type reflect.Type, resize func(io.Reader, image.Point, Interpolation) ([]uint8, image.Point, error)) {
 	reader, err := os.Open("./test.jpg")
 	if err != nil {
 		t.Fatalf("os.Open() failed: %v", err)
 	}
 	defer reader.Close()
+
 	im_data, im_size, err := resize(reader, image.Point{224, 224}, interpolation)
 	if err != nil {
 		t.Fatalf("%s() failed: %v", t.Name(), err)
@@ -32,9 +43,10 @@ func testResizeInterpolation(t *testing.T, interpolation Interpolation, channels
 	im.Elem().FieldByName("Rect").FieldByName("Max").FieldByName("X").SetInt(int64(im_size.X))
 	im.Elem().FieldByName("Rect").FieldByName("Max").FieldByName("Y").SetInt(int64(im_size.Y))
 
-	writer, err := os.Create(fmt.Sprintf("./test-%v-%v.png", t.Name(), interpolation))
+	writer, err := os.OpenFile("/dev/null", os.O_WRONLY, 0)
+	//	writer, err := os.Create(fmt.Sprintf("./test-%v-%v.png", t.Name(), interpolation))
 	if err != nil {
-		t.Fatalf("os.Create() failed: %v", err)
+		t.Fatalf("os.OpenFile() failed: %v", err)
 	}
 	defer writer.Close()
 
@@ -44,12 +56,9 @@ func testResizeInterpolation(t *testing.T, interpolation Interpolation, channels
 }
 
 func testResize(t *testing.T, channels int, im_type reflect.Type, resize func(io.Reader, image.Point, Interpolation) ([]uint8, image.Point, error)) {
-	for _, interpolation := range []Interpolation{
-		InterpolationNearestNeighbour, InterpolationLinear, InterpolationCubic, InterpolationLanczos, InterpolationSuper,
-		InterpolationAntialiasingLinear, InterpolationAntialiasingCubic, InterpolationAntialiasingLanczos} {
+	for _, interpolation := range allInterpolations {
 		testResizeInterpolation(t, interpolation, channels, im_type, resize)
 	}
-
 }
 
 func TestSquareRGBA(t *testing.T) {
@@ -127,6 +136,67 @@ func TestProportions(t *testing.T) {
 		result := item.f(item.im, item.to)
 		if result.X != item.expected.X || result.Y != item.expected.Y {
 			t.Errorf("result: %v, expected: %v, (%v, %v)", result, item.expected, item.im, item.to)
+		}
+	}
+}
+
+func ippCanHandle(interpolation Interpolation, inSize, outSize int) bool {
+	switch interpolation {
+	case InterpolationLinear, InterpolationAntialiasingLinear:
+		if inSize > 1 {
+			return true
+		} else {
+			return false
+		}
+	case InterpolationCubic, InterpolationAntialiasingCubic, InterpolationAntialiasingLanczos:
+		if inSize > 4 {
+			return true
+		} else {
+			return false
+		}
+	case InterpolationLanczos:
+		if inSize > 5 {
+			return true
+		} else {
+			return false
+		}
+	case InterpolationSuper:
+		if inSize >= outSize {
+			return true
+		} else {
+			return false
+		}
+	}
+
+	// by default assume ipp can handle anything
+	return true
+}
+
+func TestIppResizeEdgeCases(t *testing.T) {
+	const outSize = 100
+
+	for _, interpolation := range allInterpolations {
+		for inputSize := 1; inputSize < 200; inputSize++ {
+			for _, channels := range [...]int{1, 3, 4} {
+				in := make([]uint8, inputSize*inputSize*channels)
+				in_stride := inputSize * channels
+				in_size := image.Point{inputSize, inputSize}
+				out := make([]uint8, outSize*outSize*channels)
+				out_stride := outSize * channels
+				out_size := image.Point{outSize, outSize}
+				err := Resize(in, in_stride, in_size, out, out_stride, out_size, channels, interpolation)
+				if err != nil {
+					specificErr, ok := err.(*Error)
+					if !ok {
+						t.Fatalf("oops, %#v", err)
+					}
+					//					t.Logf("%v %v %v -> %v", interpolation, inputSize, outSize, ippCanHandle(interpolation, inputSize, outSize))
+					if specificErr.Code() == IppStsSizeErr && !ippCanHandle(interpolation, inputSize, outSize) {
+						continue
+					}
+					t.Errorf("%v: size=%v, channels=%v, code=%v", interpolation, inputSize, channels, specificErr.Code())
+				}
+			}
 		}
 	}
 }

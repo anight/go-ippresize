@@ -1,5 +1,7 @@
 package ippresize
 
+//go:generate stringer -type=Interpolation -trimprefix Interpolation
+
 /*
 #include "image.h"
 #cgo pkg-config: libippi
@@ -30,26 +32,21 @@ const (
 	InterpolationAntialiasingLanczos Interpolation = C.IMAGE_INTERPOLATION_ANTIALIASING_LANCZOS
 )
 
-func (i Interpolation) String() string {
-	switch i {
-	case InterpolationNearestNeighbour:
-		return "NearestNeighbour"
-	case InterpolationLinear:
-		return "Linear"
-	case InterpolationCubic:
-		return "Cubic"
-	case InterpolationLanczos:
-		return "Lanczos"
-	case InterpolationSuper:
-		return "Super"
-	case InterpolationAntialiasingLinear:
-		return "AntialiasingLinear"
-	case InterpolationAntialiasingCubic:
-		return "AntialiasingCubic"
-	case InterpolationAntialiasingLanczos:
-		return "AntialiasingLanczos"
-	}
-	return ""
+type Error struct {
+	error string
+	code  int
+}
+
+func NewError(code int, format string, args ...interface{}) *Error {
+	return &Error{code: code, error: fmt.Sprintf(format, args...)}
+}
+
+func (e *Error) Error() string {
+	return e.error
+}
+
+func (e *Error) Code() IppStatus {
+	return IppStatus(e.code)
 }
 
 func Decode(reader io.Reader, colorspace jpeg.OutColorSpace, bbox image.Point) (image.Image, error) {
@@ -61,14 +58,24 @@ func Decode(reader io.Reader, colorspace jpeg.OutColorSpace, bbox image.Point) (
 	return jpeg.Decode(reader, &decoderOptions)
 }
 
-func Resize(in []uint8, in_stride int, in_size image.Point, out []uint8, out_stride int, out_size image.Point, channels int, interpolation Interpolation) {
+func Resize(in []uint8, in_stride int, in_size image.Point, out []uint8, out_stride int, out_size image.Point, channels int, interpolation Interpolation) error {
+
+	if in_size.X <= 0 || in_size.Y <= 0 {
+		return NewError(0, "one of the input image dimensions is invalid: {width: %v, height: %v}", in_size.X, in_size.Y)
+	}
+
+	if out_size.X <= 0 || out_size.Y <= 0 {
+		return NewError(0, "one of the output image dimensions is invalid: {width: %v, height: %v}", out_size.X, out_size.Y)
+	}
 
 	if len(in) < channels*in_size.X*in_size.Y {
-		panic("too small input image")
+		return NewError(0, "input image buffer size doesn't match image dimensions: {width: %v, height: %v, channels: %v}, len=%v",
+			in_size.X, in_size.Y, channels, len(in))
 	}
 
 	if len(out) < channels*out_size.X*out_size.Y {
-		panic("too small output image")
+		return NewError(0, "output image buffer size doesn't match image dimensions: {width: %v, height: %v, channels: %v}, len=%v",
+			out_size.X, out_size.Y, channels, len(out))
 	}
 
 	var img_in C.struct_image_s
@@ -85,18 +92,35 @@ func Resize(in []uint8, in_stride int, in_size image.Point, out []uint8, out_str
 	img_out.rowstep = C.ulong(out_stride)
 	img_out_data := (*C.uchar)(unsafe.Pointer(&out[0]))
 
-	if 0 > C.image_ipp_resize(&img_in, img_in_data, &img_out, img_out_data, C.image_interpolation_t(interpolation)) {
-		panic("C.image_ipp_resize() failed")
-	}
+	const err_size = 1024
+	var err [err_size]C.char
 
-	/* make 100% sure garbage collector wont kill these objects in the middle of execution of image_ipp_resize() */
+	ret := C.image_ipp_resize(&img_in, img_in_data, &img_out, img_out_data, C.image_interpolation_t(interpolation), &err[0], err_size)
+
+	/* make 100% sure garbage collector wont kill these objects in the middle of execution of c function */
 	runtime.KeepAlive(img_in)
 	runtime.KeepAlive(img_in_data)
 	runtime.KeepAlive(img_out)
 	runtime.KeepAlive(img_out_data)
+
+	if ret != 0 {
+		return NewError(int(ret), "C.image_ipp_resize() failed: %v", C.GoString(&err[0]))
+	}
+
+	return nil
 }
 
-func ReplicateBorder(in []uint8, in_stride int, in_size image.Point, channels int, src image.Rectangle) {
+func ReplicateBorder(in []uint8, in_stride int, in_size image.Point, channels int, src image.Rectangle) error {
+
+	if in_size.X <= 0 || in_size.Y <= 0 {
+		return NewError(0, "one of the input image dimensions is invalid: {width: %v, height: %v}", in_size.X, in_size.Y)
+	}
+
+	if len(in) < channels*in_size.X*in_size.Y {
+		return NewError(0, "input image buffer size doesn't match image dimensions: {width: %v, height: %v, channels: %v}, len=%v",
+			in_size.X, in_size.Y, channels, len(in))
+	}
+
 	var img C.struct_image_s
 	img.w = C.uint(in_size.X)
 	img.h = C.uint(in_size.Y)
@@ -104,12 +128,20 @@ func ReplicateBorder(in []uint8, in_stride int, in_size image.Point, channels in
 	img.rowstep = C.size_t(in_stride)
 	img_data := (*C.uchar)(unsafe.Pointer(&in[0]))
 
-	if 0 > C.image_ipp_replicate_border_inplace(&img, img_data, C.uint(src.Min.X), C.uint(src.Min.Y), C.uint(src.Dx()), C.uint(src.Dy())) {
-		panic("C.image_ipp_replicate_border_inplace() failed")
-	}
+	const err_size = 1024
+	var err [err_size]C.char
 
+	ret := C.image_ipp_replicate_border_inplace(&img, img_data, C.uint(src.Min.X), C.uint(src.Min.Y), C.uint(src.Dx()), C.uint(src.Dy()), &err[0], err_size)
+
+	/* make 100% sure garbage collector wont kill these objects in the middle of execution of c function */
 	runtime.KeepAlive(img)
 	runtime.KeepAlive(img_data)
+
+	if ret != 0 {
+		return NewError(int(ret), "C.image_ipp_replicate_border_inplace() failed: %v", C.GoString(&err[0]))
+	}
+
+	return nil
 }
 
 func GetProportionalLargestInnerSize(in_size image.Point, box image.Point) image.Point {
@@ -148,15 +180,15 @@ func GetProportionalSmallestOuterSize(in_size image.Point, box image.Point) imag
 	return image.Point{X: w, Y: h}
 }
 
-func ResizeProportional(in []uint8, in_stride int, in_size image.Point, channels int, out_size_box image.Point, interpolation Interpolation) ([]uint8, image.Point) {
+func ResizeProportional(in []uint8, in_stride int, in_size image.Point, channels int, out_size_box image.Point, interpolation Interpolation) ([]uint8, image.Point, error) {
 	out_size := GetProportionalLargestInnerSize(in_size, out_size_box)
 	out := make([]uint8, channels*out_size.X*out_size.Y)
 	out_rowstep := channels * out_size.X
-	Resize(in, in_stride, in_size, out, out_rowstep, out_size, channels, interpolation)
-	return out, out_size
+	err := Resize(in, in_stride, in_size, out, out_rowstep, out_size, channels, interpolation)
+	return out, out_size, err
 }
 
-func ResizePadGray(in []uint8, in_stride int, in_size image.Point, channels int, out_size_box image.Point, interpolation Interpolation) ([]uint8, image.Point) {
+func ResizePadGray(in []uint8, in_stride int, in_size image.Point, channels int, out_size_box image.Point, interpolation Interpolation) ([]uint8, image.Point, error) {
 	out_size := out_size_box
 	target_out_size := GetProportionalLargestInnerSize(in_size, out_size_box)
 	out := make([]uint8, channels*out_size_box.X*out_size_box.Y)
@@ -167,8 +199,8 @@ func ResizePadGray(in []uint8, in_stride int, in_size image.Point, channels int,
 	}
 	out_rowstep := channels * out_size.X
 	target_offset := channels*int((out_size.X-target_out_size.X)/2) + out_rowstep*int((out_size.Y-target_out_size.Y)/2)
-	Resize(in, in_stride, in_size, out[target_offset:], out_rowstep, target_out_size, channels, interpolation)
-	return out, out_size
+	err := Resize(in, in_stride, in_size, out[target_offset:], out_rowstep, target_out_size, channels, interpolation)
+	return out, out_size, err
 }
 
 func JpegToRGBA(reader io.Reader, bbox image.Point, interpolation Interpolation) (pixdata []uint8, size image.Point, err error) {
@@ -179,7 +211,7 @@ func JpegToRGBA(reader io.Reader, bbox image.Point, interpolation Interpolation)
 	}
 
 	im_rgba := im.(*image.RGBA)
-	pixdata, size = ResizeProportional(im_rgba.Pix, im_rgba.Stride, im_rgba.Bounds().Max, 4, bbox, interpolation)
+	pixdata, size, err = ResizeProportional(im_rgba.Pix, im_rgba.Stride, im_rgba.Bounds().Max, 4, bbox, interpolation)
 	return
 }
 
@@ -191,7 +223,7 @@ func JpegToRGB(reader io.Reader, bbox image.Point, interpolation Interpolation) 
 	}
 
 	im_rgb := im.(*rgb.Image)
-	pixdata, size = ResizeProportional(im_rgb.Pix, im_rgb.Stride, im_rgb.Bounds().Max, 3, bbox, interpolation)
+	pixdata, size, err = ResizeProportional(im_rgb.Pix, im_rgb.Stride, im_rgb.Bounds().Max, 3, bbox, interpolation)
 	return
 }
 
@@ -203,7 +235,7 @@ func JpegToGray(reader io.Reader, bbox image.Point, interpolation Interpolation)
 	}
 
 	im_gray := im.(*image.Gray)
-	pixdata, size = ResizeProportional(im_gray.Pix, im_gray.Stride, im_gray.Bounds().Max, 1, bbox, interpolation)
+	pixdata, size, err = ResizeProportional(im_gray.Pix, im_gray.Stride, im_gray.Bounds().Max, 1, bbox, interpolation)
 	return
 }
 
@@ -216,7 +248,7 @@ func JpegToSquareRGBA(reader io.Reader, sqsize int, interpolation Interpolation)
 	}
 
 	im_rgba := im.(*image.RGBA)
-	pixdata, _ = ResizePadGray(im_rgba.Pix, im_rgba.Stride, im_rgba.Bounds().Max, 4, bbox, interpolation)
+	pixdata, _, err = ResizePadGray(im_rgba.Pix, im_rgba.Stride, im_rgba.Bounds().Max, 4, bbox, interpolation)
 	return
 }
 
@@ -229,7 +261,7 @@ func JpegToSquareRGB(reader io.Reader, sqsize int, interpolation Interpolation) 
 	}
 
 	im_rgb := im.(*rgb.Image)
-	pixdata, _ = ResizePadGray(im_rgb.Pix, im_rgb.Stride, im_rgb.Bounds().Max, 3, bbox, interpolation)
+	pixdata, _, err = ResizePadGray(im_rgb.Pix, im_rgb.Stride, im_rgb.Bounds().Max, 3, bbox, interpolation)
 	return
 }
 
@@ -242,7 +274,7 @@ func JpegToSquareGray(reader io.Reader, sqsize int, interpolation Interpolation)
 	}
 
 	im_gray := im.(*image.Gray)
-	pixdata, _ = ResizePadGray(im_gray.Pix, im_gray.Stride, im_gray.Bounds().Max, 1, bbox, interpolation)
+	pixdata, _, err = ResizePadGray(im_gray.Pix, im_gray.Stride, im_gray.Bounds().Max, 1, bbox, interpolation)
 	return
 }
 
@@ -302,7 +334,7 @@ func JpegToImage(reader io.Reader, bbox image.Point, interpolation Interpolation
 	case *image.YCbCr:
 		im, err = ResizeLimitedYCbCr(i, size, interpolation)
 	default:
-		err = fmt.Errorf("unsupported color model")
+		err = NewError(0, "unsupported color model")
 	}
 
 	return
@@ -310,7 +342,7 @@ func JpegToImage(reader io.Reader, bbox image.Point, interpolation Interpolation
 
 func ResizeGray(gray *image.Gray, size image.Point, interpolation Interpolation) (resized *image.Gray, err error) {
 	resized = image.NewGray(image.Rectangle{Max: size})
-	Resize(gray.Pix, gray.Stride, image.Point{gray.Bounds().Dx(), gray.Bounds().Dy()}, resized.Pix, resized.Stride, resized.Rect.Max, 1, interpolation)
+	err = Resize(gray.Pix, gray.Stride, image.Point{gray.Bounds().Dx(), gray.Bounds().Dy()}, resized.Pix, resized.Stride, resized.Rect.Max, 1, interpolation)
 	return
 }
 
@@ -339,7 +371,7 @@ func ResizeLimitedYCbCr(ycbcr *image.YCbCr, size image.Point, interpolation Inte
 	// log.Printf("%v -> %v, %v (h%vv%v)", ycbcr.Rect.Max, size, ycbcr.SubsampleRatio, downresW, downresH)
 
 	if ycbcr.Rect.Empty() {
-		err = fmt.Errorf("Empty source image: %v", ycbcr.Rect)
+		err = NewError(0, "Empty source image: %v", ycbcr.Rect)
 		return
 	}
 
@@ -347,20 +379,30 @@ func ResizeLimitedYCbCr(ycbcr *image.YCbCr, size image.Point, interpolation Inte
 		ycbcr.Rect.Min.Y&(downresH-1) > 0 ||
 		ycbcr.Rect.Max.X&(downresW-1) > 0 ||
 		ycbcr.Rect.Max.Y&(downresH-1) > 0 {
-		err = fmt.Errorf("Unaligned source image dimensions: %v, SubsampleRatio=%v", ycbcr.Rect, ycbcr.SubsampleRatio)
+		err = NewError(0, "Unaligned source image dimensions: %v, SubsampleRatio=%v", ycbcr.Rect, ycbcr.SubsampleRatio)
 		return
 	}
 
 	if size.X&(downresW-1) > 0 || size.Y&(downresH-1) > 0 {
-		err = fmt.Errorf("Unaligned destination image dimensions: %v, SubsampleRatio=%v", size, ycbcr.SubsampleRatio)
+		err = NewError(0, "Unaligned destination image dimensions: %v, SubsampleRatio=%v", size, ycbcr.SubsampleRatio)
 		return
 	}
 
 	resized = image.NewYCbCr(image.Rectangle{Max: size}, ycbcr.SubsampleRatio)
 
-	Resize(ycbcr.Y, ycbcr.YStride, image.Point{ycbcr.Bounds().Dx(), ycbcr.Bounds().Dy()}, resized.Y, resized.YStride, size, 1, interpolation)
-	Resize(ycbcr.Cb, ycbcr.CStride, image.Point{ycbcr.Bounds().Dx() / downresW, ycbcr.Bounds().Dy() / downresH}, resized.Cb, resized.CStride, image.Point{size.X / downresW, size.Y / downresH}, 1, interpolation)
-	Resize(ycbcr.Cr, ycbcr.CStride, image.Point{ycbcr.Bounds().Dx() / downresW, ycbcr.Bounds().Dy() / downresH}, resized.Cr, resized.CStride, image.Point{size.X / downresW, size.Y / downresH}, 1, interpolation)
+	err = Resize(ycbcr.Y, ycbcr.YStride, image.Point{ycbcr.Bounds().Dx(), ycbcr.Bounds().Dy()}, resized.Y, resized.YStride, size, 1, interpolation)
+
+	if err != nil {
+		return
+	}
+
+	err = Resize(ycbcr.Cb, ycbcr.CStride, image.Point{ycbcr.Bounds().Dx() / downresW, ycbcr.Bounds().Dy() / downresH}, resized.Cb, resized.CStride, image.Point{size.X / downresW, size.Y / downresH}, 1, interpolation)
+
+	if err != nil {
+		return
+	}
+
+	err = Resize(ycbcr.Cr, ycbcr.CStride, image.Point{ycbcr.Bounds().Dx() / downresW, ycbcr.Bounds().Dy() / downresH}, resized.Cr, resized.CStride, image.Point{size.X / downresW, size.Y / downresH}, 1, interpolation)
 
 	return
 }
